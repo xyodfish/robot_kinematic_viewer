@@ -9,10 +9,12 @@
 
 - [🌍 English](#-english)
 - [✨ Key Features](#-key-features)
+- [🖼️ Preview](#️-preview)
 - [🚀 Quick Start](#-quick-start)
 - [🎮 RViz IK Demo](#-rviz-ik-demo)
 - [中文](#-中文)
 - [✨ 主要能力](#-主要能力)
+- [🖼️ 预览](#️-预览)
 - [🚀 快速开始](#-快速开始)
 - [🎮 RViz 联调示例](#-rviz-联调示例)
 
@@ -29,6 +31,16 @@ It provides a 3D interactive viewer with IK target manipulation, trajectory play
 - Safety panel with proxy-sphere distance monitoring
 - User-defined obstacle editing and visualization
 - Optional ROS bridge for external IK target input
+
+### 🖼️ Preview
+
+Add media files under `docs/assets/` and link them here.
+
+Suggested file names:
+
+- `docs/assets/overview.png` (main UI screenshot)
+- `docs/assets/ik_demo.gif` (IK dragging demo)
+- `docs/assets/playback_demo.gif` (trajectory playback demo)
 
 ### 🧠 Core Workflow
 
@@ -139,6 +151,16 @@ Useful options:
 - 基于代理球（proxy sphere）的最小距离安全监控
 - 用户障碍物编辑与可视化
 - 可选 ROS 外部目标位姿接入
+
+### 🖼️ 预览
+
+把素材放到 `docs/assets/` 后可直接在这里展示。
+
+建议文件名：
+
+- `docs/assets/overview.png`（主界面截图）
+- `docs/assets/ik_demo.gif`（IK 拖拽演示）
+- `docs/assets/playback_demo.gif`（轨迹回放演示）
 
 ### 🧠 核心流程
 
