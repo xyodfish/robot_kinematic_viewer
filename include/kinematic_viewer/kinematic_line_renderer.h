@@ -9,15 +9,16 @@
 
 namespace kinematic_viewer {
 
-class KinematicLineRenderer {
-   public:
-    void init();
-    void draw(GLuint shader, const std::vector<KinematicLineVertex>& vertices, const glm::mat4& view, const glm::mat4& proj, float lineWidth);
-    ~KinematicLineRenderer();
+    class KinematicLineRenderer {
+       public:
+        void init();
+        void draw(GLuint shader, const std::vector<KinematicLineVertex>& vertices, const glm::mat4& view, const glm::mat4& proj,
+                  float lineWidth);
+        ~KinematicLineRenderer();
 
-   private:
-    GLuint vao_ = 0;
-    GLuint vbo_ = 0;
-};
+       private:
+        GLuint vao_ = 0;
+        GLuint vbo_ = 0;
+    };
 
 }  // namespace kinematic_viewer

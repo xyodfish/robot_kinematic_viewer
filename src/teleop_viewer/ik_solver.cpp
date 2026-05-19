@@ -833,13 +833,13 @@ namespace omnilink::teleop_viewer {
                                             : std::max(50, iterations * 25));
             wbcSolver->setTolerance(fastMode ? (positionOnlyMode ? 3e-4 : 8e-4) : 1e-4);
             bool lockPlanarBaseForRotationOnlyDrag = false;
-            float activeTargetPosDeltaMm = 0.0f;
+            float activeTargetPosDeltaMm           = 0.0f;
             if (fullBodyWbcHasPlanarBase_ && !positionOnlyMode && activeChainIndex >= 0 && activeChainIndex < chainCount()) {
                 glm::vec3 currentTipPos(0.0f);
                 glm::vec3 currentTipRpy(0.0f);
                 if (fetchTipWorldPose(*scene, activeChainIndex, &currentTipPos, &currentTipRpy)) {
                     const glm::vec3 targetPos = glm::vec3(targetWorldByChain[static_cast<size_t>(activeChainIndex)][3]);
-                    activeTargetPosDeltaMm = glm::length(targetPos - currentTipPos) * 1000.0f;
+                    activeTargetPosDeltaMm    = glm::length(targetPos - currentTipPos) * 1000.0f;
                     // Rotation-dominant manipulation: keep base fixed to avoid chassis compensating arm orientation.
                     lockPlanarBaseForRotationOnlyDrag = activeTargetPosDeltaMm < (fastMode ? 8.0f : 4.0f);
                 }
@@ -879,7 +879,7 @@ namespace omnilink::teleop_viewer {
                     glm::vec3 tipRpy(0.0f);
                     if (fetchTipWorldPose(*scene, activeChainIndex, &tipPos, &tipRpy)) {
                         const glm::vec3 targetPos = glm::vec3(targetWorldByChain[static_cast<size_t>(activeChainIndex)][3]);
-                        activeErrMm = glm::length(tipPos - targetPos) * 1000.0f;
+                        activeErrMm               = glm::length(tipPos - targetPos) * 1000.0f;
                     }
                 }
                 applyWbcFullBodyQToScene(scene, qCurrent);
@@ -912,7 +912,7 @@ namespace omnilink::teleop_viewer {
             }
 
             const bool planarBaseAvailable = fullBodyWbcHasPlanarBase_ && !fullBodyWbcPlanarBaseVIndex_.empty();
-            const bool baseAssistAllowed = planarBaseAvailable && !scene->fixedBaseMode() && !lockPlanarBaseForRotationOnlyDrag;
+            const bool baseAssistAllowed   = planarBaseAvailable && !scene->fixedBaseMode() && !lockPlanarBaseForRotationOnlyDrag;
 
             Wbc::robot::IkResult wbcResult;
             if (baseAssistAllowed) {
@@ -923,11 +923,11 @@ namespace omnilink::teleop_viewer {
 
                 bool armOnlyAccept = false;
                 if (armOnlyResult.solution.size() > 0) {
-                    const float armOnlyErrMm = evaluateActiveChainErrorMm(armOnlyResult.solution);
+                    const float armOnlyErrMm            = evaluateActiveChainErrorMm(armOnlyResult.solution);
                     const float armOnlyReachThresholdMm = fastMode ? 70.0f : 50.0f;
-                    const float forceBaseAssistDeltaMm = fastMode ? 70.0f : 50.0f;
-                    const bool forceBaseAssist = activeTargetPosDeltaMm > forceBaseAssistDeltaMm;
-                    armOnlyAccept = (armOnlyErrMm <= armOnlyReachThresholdMm) && !forceBaseAssist;
+                    const float forceBaseAssistDeltaMm  = fastMode ? 70.0f : 50.0f;
+                    const bool forceBaseAssist          = activeTargetPosDeltaMm > forceBaseAssistDeltaMm;
+                    armOnlyAccept                       = (armOnlyErrMm <= armOnlyReachThresholdMm) && !forceBaseAssist;
                 }
 
                 if (armOnlyAccept) {

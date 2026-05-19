@@ -6,11 +6,11 @@
 
 namespace kinematic_viewer {
 
-struct LaunchConfig {
-    KinematicViewerConfig config;
-    std::string urdfPath;
-};
+    struct LaunchConfig {
+        KinematicViewerConfig config;
+        std::string urdfPath;
+    };
 
-bool LoadLaunchConfigFromArgs(int argc, char** argv, LaunchConfig* out, std::string* errorMessage);
+    bool LoadLaunchConfigFromArgs(int argc, char** argv, LaunchConfig* out, std::string* errorMessage);
 
 }  // namespace kinematic_viewer

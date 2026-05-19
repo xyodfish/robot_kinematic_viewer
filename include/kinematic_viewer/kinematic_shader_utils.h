@@ -4,7 +4,7 @@
 
 namespace kinematic_viewer {
 
-GLuint createKinematicMeshProgram();
-GLuint createKinematicLineProgram();
+    GLuint createKinematicMeshProgram();
+    GLuint createKinematicLineProgram();
 
 }  // namespace kinematic_viewer

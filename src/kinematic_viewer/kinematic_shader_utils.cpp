@@ -4,7 +4,7 @@
 
 namespace kinematic_viewer::detail {
 
-const char* kMeshVertexShader = R"(
+    const char* kMeshVertexShader = R"(
 #version 330 core
 layout (location = 0) in vec3 aPos;
 layout (location = 1) in vec3 aNormal;
@@ -23,7 +23,7 @@ void main() {
 }
 )";
 
-const char* kMeshFragmentShader = R"(
+    const char* kMeshFragmentShader = R"(
 #version 330 core
 in vec3 FragPos;
 in vec3 Normal;
@@ -48,7 +48,7 @@ void main() {
 }
 )";
 
-const char* kLineVertexShader = R"(
+    const char* kLineVertexShader = R"(
 #version 330 core
 layout (location = 0) in vec3 aPos;
 layout (location = 1) in vec3 aColor;
@@ -61,7 +61,7 @@ void main() {
 }
 )";
 
-const char* kLineFragmentShader = R"(
+    const char* kLineFragmentShader = R"(
 #version 330 core
 in vec3 Color;
 out vec4 FragColor;
@@ -70,49 +70,49 @@ void main() {
 }
 )";
 
-GLuint compileShader(GLenum type, const char* src) {
-    GLuint shader = glCreateShader(type);
-    glShaderSource(shader, 1, &src, nullptr);
-    glCompileShader(shader);
-    GLint ok = GL_FALSE;
-    glGetShaderiv(shader, GL_COMPILE_STATUS, &ok);
-    if (ok != GL_TRUE) {
-        char log[1024];
-        glGetShaderInfoLog(shader, sizeof(log), nullptr, log);
-        std::cerr << "Shader compile failed: " << log << std::endl;
+    GLuint compileShader(GLenum type, const char* src) {
+        GLuint shader = glCreateShader(type);
+        glShaderSource(shader, 1, &src, nullptr);
+        glCompileShader(shader);
+        GLint ok = GL_FALSE;
+        glGetShaderiv(shader, GL_COMPILE_STATUS, &ok);
+        if (ok != GL_TRUE) {
+            char log[1024];
+            glGetShaderInfoLog(shader, sizeof(log), nullptr, log);
+            std::cerr << "Shader compile failed: " << log << std::endl;
+        }
+        return shader;
     }
-    return shader;
-}
 
-GLuint createProgram(const char* vsSrc, const char* fsSrc) {
-    GLuint vs      = compileShader(GL_VERTEX_SHADER, vsSrc);
-    GLuint fs      = compileShader(GL_FRAGMENT_SHADER, fsSrc);
-    GLuint program = glCreateProgram();
-    glAttachShader(program, vs);
-    glAttachShader(program, fs);
-    glLinkProgram(program);
-    GLint ok = GL_FALSE;
-    glGetProgramiv(program, GL_LINK_STATUS, &ok);
-    if (ok != GL_TRUE) {
-        char log[1024];
-        glGetProgramInfoLog(program, sizeof(log), nullptr, log);
-        std::cerr << "Program link failed: " << log << std::endl;
+    GLuint createProgram(const char* vsSrc, const char* fsSrc) {
+        GLuint vs      = compileShader(GL_VERTEX_SHADER, vsSrc);
+        GLuint fs      = compileShader(GL_FRAGMENT_SHADER, fsSrc);
+        GLuint program = glCreateProgram();
+        glAttachShader(program, vs);
+        glAttachShader(program, fs);
+        glLinkProgram(program);
+        GLint ok = GL_FALSE;
+        glGetProgramiv(program, GL_LINK_STATUS, &ok);
+        if (ok != GL_TRUE) {
+            char log[1024];
+            glGetProgramInfoLog(program, sizeof(log), nullptr, log);
+            std::cerr << "Program link failed: " << log << std::endl;
+        }
+        glDeleteShader(vs);
+        glDeleteShader(fs);
+        return program;
     }
-    glDeleteShader(vs);
-    glDeleteShader(fs);
-    return program;
-}
 
 }  // namespace kinematic_viewer::detail
 
 namespace kinematic_viewer {
 
-GLuint createKinematicMeshProgram() {
-    return detail::createProgram(detail::kMeshVertexShader, detail::kMeshFragmentShader);
-}
+    GLuint createKinematicMeshProgram() {
+        return detail::createProgram(detail::kMeshVertexShader, detail::kMeshFragmentShader);
+    }
 
-GLuint createKinematicLineProgram() {
-    return detail::createProgram(detail::kLineVertexShader, detail::kLineFragmentShader);
-}
+    GLuint createKinematicLineProgram() {
+        return detail::createProgram(detail::kLineVertexShader, detail::kLineFragmentShader);
+    }
 
 }  // namespace kinematic_viewer

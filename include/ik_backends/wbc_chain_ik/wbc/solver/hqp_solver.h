@@ -5,9 +5,9 @@
 #include "wbc/solver/qp_solver.h"
 
 namespace Wbc {
-namespace solver {
+    namespace solver {
 
-/**
+        /**
  * @brief Hierarchical QP Solver
  *
  * Solves a two-level QP problem:
@@ -19,23 +19,23 @@ namespace solver {
  * The solver first solves level 0, then uses the solution as an equality constraint
  * for level 1 to ensure the higher priority objective is satisfied.
  */
-class HQPSolver {
-   public:
-    HQPSolver();
-    ~HQPSolver() = default;
+        class HQPSolver {
+           public:
+            HQPSolver();
+            ~HQPSolver() = default;
 
-    /**
+            /**
      * @brief Solve the HQP problem
      * @param hqp_data Contains both level 0 (qp0) and level 1 (qp1) objectives
      * @return const QPOutput& Solution with status, primal variables, and multipliers
      */
-    const QPOutput& solve(HQPData& hqp_data);
+            const QPOutput& solve(HQPData& hqp_data);
 
-   private:
-    QPSolver qp0_solver_, qp1_solver_;
+           private:
+            QPSolver qp0_solver_, qp1_solver_;
 
-    QPOutput output;
-};
+            QPOutput output;
+        };
 
-}  // namespace solver
+    }  // namespace solver
 }  // namespace Wbc
