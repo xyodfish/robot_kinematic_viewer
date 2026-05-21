@@ -1323,12 +1323,21 @@ int main(int argc, char** argv) {
 
                     if (ImGui::CollapsingHeader("目标位姿与求解", ImGuiTreeNodeFlags_DefaultOpen)) {
                         ImGui::TextDisabled("直接在3D视窗抓取 Gizmo 轴/圆环进行平移或旋转");
+                        const glm::vec3 marker_pos_now(ik_state.marker_pos[0], ik_state.marker_pos[1], ik_state.marker_pos[2]);
+                        const glm::quat marker_q_now = glm::normalize(
+                            glm::quat_cast(markerWorldMatrix(glm::vec3(0.0f),
+                                                             glm::vec3(ik_state.marker_rpy_deg[0], ik_state.marker_rpy_deg[1],
+                                                                       ik_state.marker_rpy_deg[2]))));
+                        const std::string marker_pose_text = FormatPoseInputXyzQuat(marker_pos_now, marker_q_now);
+                        char marker_pose_display[256]      = {0};
+                        std::snprintf(marker_pose_display, sizeof(marker_pose_display), "%s", marker_pose_text.c_str());
+                        ImGui::InputText("当前Marker位姿(x,y,z,qx,qy,qz,qw)", marker_pose_display, sizeof(marker_pose_display),
+                                         ImGuiInputTextFlags_ReadOnly);
+                        if (ImGui::Button("复制当前Marker位姿")) {
+                            ImGui::SetClipboardText(marker_pose_display);
+                        }
                         static char marker_pose_input[256] = "";
                         if (marker_pose_input[0] == '\0') {
-                            const glm::vec3 marker_pos_now(ik_state.marker_pos[0], ik_state.marker_pos[1], ik_state.marker_pos[2]);
-                            const glm::quat marker_q_now     = glm::normalize(glm::quat_cast(markerWorldMatrix(
-                                glm::vec3(0.0f),
-                                glm::vec3(ik_state.marker_rpy_deg[0], ik_state.marker_rpy_deg[1], ik_state.marker_rpy_deg[2]))));
                             const std::string init_pose_text = FormatPoseInputXyzQuat(marker_pos_now, marker_q_now);
                             std::snprintf(marker_pose_input, sizeof(marker_pose_input), "%s", init_pose_text.c_str());
                         }

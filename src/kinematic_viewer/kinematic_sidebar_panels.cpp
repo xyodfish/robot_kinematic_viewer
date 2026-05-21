@@ -713,7 +713,7 @@ namespace kinematic_viewer {
             }
             ImGui::SameLine();
             if (ImGui::Button("生成Demo轨迹")) {
-                BuildDemoTrajectoryFromCurrentPose(playbackState, joints);
+                BuildDemoTrajectoryFromCurrentPose(playbackState, joints, *scene);
                 std::string ioError;
                 if (SaveTrajectoryToFile(playbackState->trajectory_file_path, *playbackState, &ioError)) {
                     playbackState->trajectory_io_status = "Demo轨迹已生成并保存";
@@ -736,7 +736,7 @@ namespace kinematic_viewer {
 
         if (ImGui::CollapsingHeader("播放控制", ImGuiTreeNodeFlags_DefaultOpen)) {
             if (ImGui::Button("记录关键帧")) {
-                playbackPlayer->RecordKeyframe(playbackState, joints);
+                playbackPlayer->RecordKeyframe(playbackState, joints, *scene);
             }
             ImGui::SameLine();
             const bool playing = playbackState->mode == DebugPlaybackState::Mode::Playing;
@@ -771,8 +771,18 @@ namespace kinematic_viewer {
                 } else if (playbackState->mode == DebugPlaybackState::Mode::Paused) {
                     modeLabel = "Paused";
                 }
+                int baseKeyframeCount = 0;
+                for (const auto& keyframe : playbackState->keyframes) {
+                    if (keyframe.has_base_pose_2d) {
+                        ++baseKeyframeCount;
+                    }
+                }
                 ImGui::Text("状态: %s  总时长: %.2fs  当前段: %d", modeLabel, total, playbackState->current_segment_index);
                 ImGui::Text("关键帧数: %d", static_cast<int>(playbackState->keyframes.size()));
+                ImGui::Text("底盘关键帧: %d", baseKeyframeCount);
+                if (baseKeyframeCount > 0 && scene->fixedBaseMode()) {
+                    ImGui::TextColored(ImVec4(1.0f, 0.75f, 0.30f, 1.0f), "提示: 当前固定底座模式开启，底盘轨迹不会体现在模型位姿上");
+                }
             } else {
                 ImGui::TextDisabled("暂无关键帧，点击“记录关键帧”开始。");
             }
@@ -788,11 +798,12 @@ namespace kinematic_viewer {
 
             if (playbackState->keyframes.empty()) {
                 ImGui::TextDisabled("暂无关键帧。");
-            } else if (ImGui::BeginTable("keyframe_table", 3, ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg | ImGuiTableFlags_ScrollY,
+            } else if (ImGui::BeginTable("keyframe_table", 4, ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg | ImGuiTableFlags_ScrollY,
                                          ImVec2(0.0f, 200.0f))) {
                 ImGui::TableSetupColumn("索引");
                 ImGui::TableSetupColumn("时间(s)");
                 ImGui::TableSetupColumn("关节数");
+                ImGui::TableSetupColumn("底盘");
                 ImGui::TableHeadersRow();
                 for (int i = 0; i < static_cast<int>(playbackState->keyframes.size()); ++i) {
                     const auto& keyframe = playbackState->keyframes[static_cast<size_t>(i)];
@@ -809,6 +820,8 @@ namespace kinematic_viewer {
                     ImGui::Text("%.2f", keyframe.t);
                     ImGui::TableSetColumnIndex(2);
                     ImGui::Text("%d", static_cast<int>(keyframe.joints.size()));
+                    ImGui::TableSetColumnIndex(3);
+                    ImGui::TextUnformatted(keyframe.has_base_pose_2d ? "有" : "-");
                 }
                 ImGui::EndTable();
             }

@@ -10,11 +10,13 @@
 - [🌍 English](#-english)
 - [✨ Key Features](#-key-features)
 - [🖼️ Preview](#️-preview)
+- [💃 Dance Playback Demo](#-dance-playback-demo)
 - [🚀 Quick Start](#-quick-start)
 - [🎮 RViz IK Demo](#-rviz-ik-demo)
 - [中文](#-中文)
 - [✨ 主要能力](#-主要能力)
 - [🖼️ 预览](#️-预览)
+- [💃 跳舞回放演示](#-跳舞回放演示)
 - [🚀 快速开始](#-快速开始)
 - [🎮 RViz 联调示例](#-rviz-联调示例)
 
@@ -34,9 +36,19 @@ It provides a 3D interactive viewer with IK target manipulation, trajectory play
 
 ### 🖼️ Preview
 
-![Robot Kinematic Viewer — interactive 3D view, IK, and playback](assets/gui_viewer.png)
+![Robot Kinematic Viewer — interactive 3D view, IK, and playback](assets/gui_viewer.jpg)
 
-Additional screenshots or short clips can live under `docs/assets/` if you want to split demos by feature (for example `overview.png`, `ik_demo.gif`, `playback_demo.gif`).
+![Overview demo](assets/robot_kinematic_viewer.gif)
+
+### 💃 Dance Playback Demo
+
+Screen recording of Galbot G1 dance trajectory playback in the viewer (chassis slide-in + joint motion, imported from `/data/dance`):
+
+**[assets/simplescreenrecorder-2026-05-21_11.21.13.mkv](assets/simplescreenrecorder-2026-05-21_11.21.13.mkv)** (~9 MB)
+
+Default trajectory in the recording: `config/trajectories/galbot_g1_dance_slide_in.csv` (10 s). Other dance demos: `galbot_g1_dance_full.csv` (full ~56 s), `galbot_g1_dance_pure.csv`, `galbot_g1_dance_left_action1.csv` — see [Trajectory Playback](#-trajectory-playback-yaml--csv).
+
+> MKV plays in most desktop players and browsers when opened locally; clone the repo or download the file from GitHub to watch.
 
 ### 🧠 Core Workflow
 
@@ -53,10 +65,11 @@ Load URDF + config
 
 ```text
 robot_kinematic_viewer/
+  assets/                  # screenshots, GIFs, dance playback videos
+  config/                  # YAML runtime configs + trajectories/
+  scripts/                 # build/deploy, RViz, import_dance_trajectory.py
   include/                 # public headers
   src/                     # core implementation
-  config/                  # YAML runtime configs
-  scripts/                 # build/deploy and RViz integration scripts
   docs/                    # design docs
   deps/                    # vendored imgui/imguizmo/glad sources
 ```
@@ -125,10 +138,42 @@ Useful options:
 - Keep top-level YAML keys limited to:
   - `window`, `robot`, `camera`, `ui`, `ik`, `ros`, `initial_pose`
 
+### 🎬 Trajectory Playback (YAML / CSV)
+
+See **[Dance Playback Demo](#-dance-playback-demo)** for a screen recording (`assets/simplescreenrecorder-2026-05-21_11.21.13.mkv`).
+
+Playback panel supports `.yaml`, `.yml`, and `.csv`. **Preferred format** is a single table (same layout for YAML and CSV):
+
+```text
+joints: [optional chassis_x, chassis_y, chassis_yaw, joint1, joint2, ...]
+values:
+  - [time, optional chassis..., joint1, joint2, ...]
+```
+
+| Robot | Demo YAML | Demo CSV | Notes |
+| --- | --- | --- | --- |
+| Galbot G1 | `config/trajectories/galbot_g1_playback.yaml` | `config/trajectories/galbot_g1_playback.csv` | Includes 2D chassis track (`chassis_x/y/yaw`, rad) |
+| Galbot G1 dance (arms) | — | `config/trajectories/galbot_g1_dance_left_action1.csv` | Arm segment, fixed chassis |
+| Galbot G1 dance (chassis) | — | `config/trajectories/galbot_g1_dance_slide_in.csv` | 10s slide-in + spin (default) |
+| Galbot G1 dance (chassis) | — | `config/trajectories/galbot_g1_dance_pure.csv` | ~4s segment with chassis |
+| Galbot G1 dance (full) | — | `config/trajectories/galbot_g1_dance_full.csv` | ~56s full dance + chassis |
+| Unitree G1 | `config/trajectories/unitree_g1_playback.yaml` | `config/trajectories/unitree_g1_playback.csv` | Joint-only (fixed base in viewer config) |
+
+CSV header: `time,<joint columns...>` (chassis columns use the same names as YAML).
+
+**Import more dances from `/data/dance`:**
+
+```bash
+python3 scripts/import_dance_trajectory.py \
+  /data/dance/data/dance3/generate/pos/total_dance_data.csv \
+  config/trajectories/galbot_g1_dance_full.csv --hz 30
+```
+
+The viewer also loads dance CSVs directly (`timestamp` column, `chassis_z` → yaw). Legacy compact YAML (`trajectory.dt` + separate `base_2d`) is still supported; **save** writes the table format above.
+
 ### 🛣️ Roadmap
 
 - Replace visual-proxy collision with URDF collision geometry
-- Add trajectory import/export (YAML/JSON)
 - Improve pair-filter customization for collision checking
 - Add more automated regression tests
 
@@ -150,9 +195,19 @@ Useful options:
 
 ### 🖼️ 预览
 
-![Robot Kinematic Viewer — 交互 3D、IK 与回放](assets/robot_kinematic_viewer.gif)
+![Robot Kinematic Viewer — 交互界面](assets/gui_viewer.jpg)
 
-如需按功能拆分展示，可把更多截图或短视频放在 `docs/assets/`（例如 `overview.png`、`ik_demo.gif`、`playback_demo.gif`）。
+![功能概览](assets/robot_kinematic_viewer.gif)
+
+### 💃 跳舞回放演示
+
+Galbot G1 在 Viewer 中回放跳舞轨迹的录屏（含底盘滑入与全身关节，轨迹来自 `/data/dance` 导入）：
+
+**[assets/simplescreenrecorder-2026-05-21_11.21.13.mkv](assets/simplescreenrecorder-2026-05-21_11.21.13.mkv)**（约 9 MB）
+
+录屏使用的默认轨迹：`config/trajectories/galbot_g1_dance_slide_in.csv`（10 s）。另有完整舞段 `galbot_g1_dance_full.csv`（约 56 s）、`galbot_g1_dance_pure.csv`、`galbot_g1_dance_left_action1.csv` 等，见 [轨迹回放](#-轨迹回放yaml--csv)。
+
+> MKV 在本地用常见播放器或浏览器打开即可观看；需克隆仓库或从 GitHub 下载该文件。
 
 ### 🧠 核心流程
 
@@ -169,10 +224,11 @@ Useful options:
 
 ```text
 robot_kinematic_viewer/
+  assets/                  # 截图、GIF、跳舞回放录屏
+  config/                  # 运行配置 + trajectories/
+  scripts/                 # 构建、RViz、import_dance_trajectory.py
   include/                 # 对外头文件
   src/                     # 核心实现
-  config/                  # 运行配置
-  scripts/                 # 构建、打包、RViz 联调脚本
   docs/                    # 设计文档
   deps/                    # 内置三方源码（imgui/imguizmo/glad）
 ```
@@ -245,10 +301,42 @@ robot_kinematic_viewer/
 
 - 设计文档：`docs/ROBOT_KINEMATIC_VIEWER_DESIGN.md`
 
+### 🎬 轨迹回放（YAML / CSV）
+
+录屏演示见 **[跳舞回放演示](#-跳舞回放演示)**（`assets/simplescreenrecorder-2026-05-21_11.21.13.mkv`）。
+
+侧边栏回放支持 `.yaml` / `.yml` / `.csv`。**推荐格式**为单表结构（YAML 与 CSV 列一致）：
+
+```text
+joints: [可选 chassis_x, chassis_y, chassis_yaw, 关节1, 关节2, ...]
+values:
+  - [时间, 可选底盘位姿..., 关节1, 关节2, ...]
+```
+
+| 机器人 | 示例 YAML | 示例 CSV | 说明 |
+| --- | --- | --- | --- |
+| Galbot G1 | `config/trajectories/galbot_g1_playback.yaml` | `config/trajectories/galbot_g1_playback.csv` | 含底盘平面轨迹（`chassis_x/y/yaw`，弧度） |
+| Galbot G1 跳舞（手臂） | — | `config/trajectories/galbot_g1_dance_left_action1.csv` | 手臂段，底盘不动 |
+| Galbot G1 跳舞（底盘） | — | `config/trajectories/galbot_g1_dance_slide_in.csv` | 10s 滑入+旋转（默认） |
+| Galbot G1 跳舞（底盘） | — | `config/trajectories/galbot_g1_dance_pure.csv` | ~4s 含底盘片段 |
+| Galbot G1 跳舞（完整） | — | `config/trajectories/galbot_g1_dance_full.csv` | ~56s 全程含底盘 |
+| Unitree G1 | `config/trajectories/unitree_g1_playback.yaml` | `config/trajectories/unitree_g1_playback.csv` | 仅关节（配置中固定基座） |
+
+CSV 表头：`time,<关节列...>`（底盘列名与 YAML 相同）。
+
+**从 `/data/dance` 导入更多轨迹：**
+
+```bash
+python3 scripts/import_dance_trajectory.py \
+  /data/dance/data/dance3/generate/pos/total_dance_data.csv \
+  config/trajectories/galbot_g1_dance_full.csv --hz 30
+```
+
+Viewer 也可直接加载 dance 原始 CSV（`timestamp` 列、`chassis_z` 映射为 yaw）。旧版紧凑 YAML 仍可加载；**保存**时统一输出上表格式。
+
 ### 🛣️ 后续规划
 
 - 用 URDF collision mesh 提升碰撞检测精度
-- 增加轨迹导入导出（YAML/JSON）
 - 完善碰撞对过滤策略可配置能力
 - 补齐自动化回归测试
 

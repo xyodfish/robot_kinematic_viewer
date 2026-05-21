@@ -3,15 +3,41 @@
 #include <yaml-cpp/yaml.h>
 
 #include <algorithm>
+#include <array>
 #include <cctype>
 #include <cmath>
 #include <filesystem>
 #include <fstream>
 #include <sstream>
+#include <unordered_map>
 #include <utility>
 
 namespace kinematic_viewer {
     namespace kinematic_playback_internal {
+
+        std::string LowerString(std::string s);
+
+        std::string NormalizeTrajectoryJointName(const std::string& raw_name) {
+            static const std::unordered_map<std::string, std::string> kAliases = {
+                {"leg1", "leg_joint1"},       {"leg2", "leg_joint2"},       {"leg3", "leg_joint3"},
+                {"leg4", "leg_joint4"},       {"leg5", "leg_joint5"},       {"head1", "head_joint1"},
+                {"head2", "head_joint2"},     {"left_arm1", "left_arm_joint1"}, {"left_arm2", "left_arm_joint2"},
+                {"left_arm3", "left_arm_joint3"}, {"left_arm4", "left_arm_joint4"}, {"left_arm5", "left_arm_joint5"},
+                {"left_arm6", "left_arm_joint6"}, {"left_arm7", "left_arm_joint7"}, {"right_arm1", "right_arm_joint1"},
+                {"right_arm2", "right_arm_joint2"}, {"right_arm3", "right_arm_joint3"}, {"right_arm4", "right_arm_joint4"},
+                {"right_arm5", "right_arm_joint5"}, {"right_arm6", "right_arm_joint6"}, {"right_arm7", "right_arm_joint7"},
+            };
+            const std::string key = LowerString(raw_name);
+            const auto it         = kAliases.find(key);
+            if (it != kAliases.end()) {
+                return it->second;
+            }
+            return raw_name;
+        }
+
+        bool IsSkippedCsvColumn(const std::string& key_lower) {
+            return key_lower == "idx" || key_lower == "id";
+        }
 
         DebugPlaybackState::Mode NextPausedOrPlaying(DebugPlaybackState::Mode mode) {
             if (mode == DebugPlaybackState::Mode::Playing) {
@@ -29,6 +55,190 @@ namespace kinematic_viewer {
                 phase += twoPi;
             }
             return phase;
+        }
+
+        bool ParseYamlScalarF32(const YAML::Node& node, float* out_value) {
+            if (!node || !node.IsScalar() || out_value == nullptr) {
+                return false;
+            }
+            try {
+                const float value = node.as<float>();
+                if (!std::isfinite(value)) {
+                    return false;
+                }
+                *out_value = value;
+                return true;
+            } catch (const std::exception&) {
+                return false;
+            }
+        }
+
+        bool ParseBasePose2DMapNode(const YAML::Node& node, float* out_x_m, float* out_y_m, float* out_yaw_rad) {
+            if (!node || !node.IsMap() || out_x_m == nullptr || out_y_m == nullptr || out_yaw_rad == nullptr) {
+                return false;
+            }
+            float x_m = 0.0f;
+            float y_m = 0.0f;
+            if (!ParseYamlScalarF32(node["x"], &x_m) || !ParseYamlScalarF32(node["y"], &y_m)) {
+                return false;
+            }
+
+            float yaw_rad = 0.0f;
+            if (!ParseYamlScalarF32(node["yaw_rad"], &yaw_rad) && !ParseYamlScalarF32(node["yaw"], &yaw_rad)) {
+                float yaw_deg = 0.0f;
+                if (!ParseYamlScalarF32(node["yaw_deg"], &yaw_deg)) {
+                    return false;
+                }
+                yaw_rad = yaw_deg * 0.017453292519943295f;
+            }
+
+            *out_x_m    = x_m;
+            *out_y_m    = y_m;
+            *out_yaw_rad = yaw_rad;
+            return true;
+        }
+
+        bool ParseBasePose2DFlatNode(const YAML::Node& node, float* out_x_m, float* out_y_m, float* out_yaw_rad) {
+            if (!node || !node.IsMap() || out_x_m == nullptr || out_y_m == nullptr || out_yaw_rad == nullptr) {
+                return false;
+            }
+            float x_m = 0.0f;
+            float y_m = 0.0f;
+            if (!ParseYamlScalarF32(node["base_x"], &x_m) && !ParseYamlScalarF32(node["base_x_m"], &x_m)) {
+                return false;
+            }
+            if (!ParseYamlScalarF32(node["base_y"], &y_m) && !ParseYamlScalarF32(node["base_y_m"], &y_m)) {
+                return false;
+            }
+
+            float yaw_rad = 0.0f;
+            if (!ParseYamlScalarF32(node["base_yaw_rad"], &yaw_rad) && !ParseYamlScalarF32(node["base_yaw"], &yaw_rad)) {
+                float yaw_deg = 0.0f;
+                if (!ParseYamlScalarF32(node["base_yaw_deg"], &yaw_deg)) {
+                    return false;
+                }
+                yaw_rad = yaw_deg * 0.017453292519943295f;
+            }
+
+            *out_x_m    = x_m;
+            *out_y_m    = y_m;
+            *out_yaw_rad = yaw_rad;
+            return true;
+        }
+
+        int FindClosestKeyframeByTimeSec(const std::vector<PoseKeyframe>& keyframes, double t_sec, double tol_sec) {
+            if (keyframes.empty()) {
+                return -1;
+            }
+            double best_dt = tol_sec;
+            int best_index = -1;
+            for (size_t i = 0; i < keyframes.size(); ++i) {
+                const double dt = std::fabs(keyframes[i].t - t_sec);
+                if (dt <= best_dt) {
+                    best_dt    = dt;
+                    best_index = static_cast<int>(i);
+                }
+            }
+            return best_index;
+        }
+
+        bool MergeCompactBase2DTrack(const YAML::Node& trajectoryNode, std::vector<PoseKeyframe>* keyframes, std::string* errorMessage) {
+            if (!trajectoryNode || !trajectoryNode.IsMap() || keyframes == nullptr) {
+                return true;
+            }
+            const YAML::Node baseNode = trajectoryNode["base_2d"];
+            if (!baseNode) {
+                return true;
+            }
+            if (!baseNode.IsMap()) {
+                if (errorMessage != nullptr) {
+                    *errorMessage = "compact base_2d: node must be map";
+                }
+                return false;
+            }
+            if (keyframes->empty()) {
+                if (errorMessage != nullptr) {
+                    *errorMessage = "compact base_2d: no keyframes to attach base track";
+                }
+                return false;
+            }
+
+            const YAML::Node valuesNode  = baseNode["values"];
+            const YAML::Node samplesNode = baseNode["samples"];
+            if (valuesNode && valuesNode.IsSequence()) {
+                if (!baseNode["dt"] || !baseNode["dt"].IsScalar()) {
+                    if (errorMessage != nullptr) {
+                        *errorMessage = "compact base_2d values: dt missing";
+                    }
+                    return false;
+                }
+                if (valuesNode.size() != keyframes->size()) {
+                    if (errorMessage != nullptr) {
+                        *errorMessage = "compact base_2d values: row count mismatch with keyframes";
+                    }
+                    return false;
+                }
+                for (size_t i = 0; i < valuesNode.size(); ++i) {
+                    const YAML::Node& row = valuesNode[i];
+                    if (!row || !row.IsSequence() || row.size() < 3) {
+                        continue;
+                    }
+                    float x_m = 0.0f;
+                    float y_m = 0.0f;
+                    float yaw = 0.0f;
+                    if (!ParseYamlScalarF32(row[0], &x_m) || !ParseYamlScalarF32(row[1], &y_m) || !ParseYamlScalarF32(row[2], &yaw)) {
+                        continue;
+                    }
+                    auto& keyframe         = (*keyframes)[i];
+                    keyframe.has_base_pose_2d = true;
+                    keyframe.base_x_m      = x_m;
+                    keyframe.base_y_m      = y_m;
+                    keyframe.base_yaw_rad  = yaw;
+                }
+                return true;
+            }
+            if (samplesNode && samplesNode.IsSequence()) {
+                bool assigned_any = false;
+                for (const auto& row : samplesNode) {
+                    if (!row || !row.IsSequence() || row.size() < 4) {
+                        continue;
+                    }
+                    double t_sec = 0.0;
+                    try {
+                        t_sec = row[0].as<double>();
+                    } catch (const std::exception&) {
+                        continue;
+                    }
+                    float x_m = 0.0f;
+                    float y_m = 0.0f;
+                    float yaw = 0.0f;
+                    if (!ParseYamlScalarF32(row[1], &x_m) || !ParseYamlScalarF32(row[2], &y_m) || !ParseYamlScalarF32(row[3], &yaw)) {
+                        continue;
+                    }
+                    const int index = FindClosestKeyframeByTimeSec(*keyframes, t_sec, 1e-3);
+                    if (index < 0) {
+                        continue;
+                    }
+                    auto& keyframe         = (*keyframes)[static_cast<size_t>(index)];
+                    keyframe.has_base_pose_2d = true;
+                    keyframe.base_x_m      = x_m;
+                    keyframe.base_y_m      = y_m;
+                    keyframe.base_yaw_rad  = yaw;
+                    assigned_any           = true;
+                }
+                if (!assigned_any && !samplesNode.IsNull() && samplesNode.size() > 0) {
+                    if (errorMessage != nullptr) {
+                        *errorMessage = "compact base_2d samples: no rows matched keyframe time";
+                    }
+                    return false;
+                }
+                return true;
+            }
+
+            if (errorMessage != nullptr) {
+                *errorMessage = "compact base_2d: require values or samples";
+            }
+            return false;
         }
 
         bool ParseLegacyKeyframesNode(const YAML::Node& keyframesNode, std::vector<PoseKeyframe>* outKeyframes) {
@@ -52,11 +262,115 @@ namespace kinematic_viewer {
                         keyframe.joints[it->first.as<std::string>()] = it->second.as<float>();
                     }
                 }
+                float base_x_m = 0.0f;
+                float base_y_m = 0.0f;
+                float base_yaw_rad = 0.0f;
+                if (ParseBasePose2DMapNode(item["base_pose_2d"], &base_x_m, &base_y_m, &base_yaw_rad) ||
+                    ParseBasePose2DFlatNode(item, &base_x_m, &base_y_m, &base_yaw_rad)) {
+                    keyframe.has_base_pose_2d = true;
+                    keyframe.base_x_m         = base_x_m;
+                    keyframe.base_y_m         = base_y_m;
+                    keyframe.base_yaw_rad     = base_yaw_rad;
+                }
                 loaded.push_back(std::move(keyframe));
             }
             std::sort(loaded.begin(), loaded.end(), [](const PoseKeyframe& a, const PoseKeyframe& b) { return a.t < b.t; });
             *outKeyframes = std::move(loaded);
             return true;
+        }
+
+        bool ParseCsvLikeYamlNode(const YAML::Node& rootNode, std::vector<PoseKeyframe>* outKeyframes, std::string* errorMessage) {
+            if (!rootNode || !rootNode.IsMap() || outKeyframes == nullptr) {
+                return false;
+            }
+            YAML::Node jointsNode = rootNode["joints"];
+            YAML::Node valuesNode = rootNode["values"];
+            if (!jointsNode || !jointsNode.IsSequence() || !valuesNode || !valuesNode.IsSequence()) {
+                return false;
+            }
+
+            std::vector<std::string> columns;
+            columns.reserve(jointsNode.size());
+            for (const auto& joint : jointsNode) {
+                if (!joint.IsScalar()) {
+                    continue;
+                }
+                columns.push_back(joint.as<std::string>());
+            }
+            if (columns.empty()) {
+                if (errorMessage != nullptr) {
+                    *errorMessage = "csv-like yaml: joints is empty";
+                }
+                return false;
+            }
+
+            int base_x_col   = -1;
+            int base_y_col   = -1;
+            int base_yaw_col = -1;
+            bool base_yaw_deg = false;
+            std::vector<std::pair<std::string, size_t>> jointColumns;
+            jointColumns.reserve(columns.size());
+            for (size_t i = 0; i < columns.size(); ++i) {
+                const std::string key = LowerString(columns[i]);
+                if (IsSkippedCsvColumn(key)) {
+                    continue;
+                }
+                if (key == "chassis_x" || key == "base_x" || key == "base_x_m" || key == "mobile_x") {
+                    base_x_col = static_cast<int>(i);
+                } else if (key == "chassis_y" || key == "base_y" || key == "base_y_m" || key == "mobile_y") {
+                    base_y_col = static_cast<int>(i);
+                } else if (key == "chassis_yaw_deg" || key == "base_yaw_deg") {
+                    base_yaw_col = static_cast<int>(i);
+                    base_yaw_deg = true;
+                } else if (key == "chassis_yaw" || key == "chassis_z" || key == "base_yaw" || key == "base_yaw_rad" ||
+                           key == "mobile_yaw") {
+                    base_yaw_col = static_cast<int>(i);
+                    base_yaw_deg = false;
+                } else {
+                    jointColumns.push_back({NormalizeTrajectoryJointName(columns[i]), i});
+                }
+            }
+            const bool has_base_cols = (base_x_col >= 0 && base_y_col >= 0 && base_yaw_col >= 0);
+            if (jointColumns.empty() && !has_base_cols) {
+                if (errorMessage != nullptr) {
+                    *errorMessage = "csv-like yaml: neither joints nor base columns found";
+                }
+                return false;
+            }
+
+            std::vector<PoseKeyframe> loaded;
+            loaded.reserve(valuesNode.size());
+            for (const auto& row : valuesNode) {
+                if (!row || !row.IsSequence() || row.size() < (columns.size() + 1)) {
+                    continue;
+                }
+                PoseKeyframe keyframe;
+                try {
+                    keyframe.t = row[0].as<double>();
+                    for (const auto& [joint_name, col_idx] : jointColumns) {
+                        keyframe.joints[joint_name] = row[col_idx + 1].as<float>();
+                    }
+                    if (has_base_cols) {
+                        float base_x_m   = row[static_cast<size_t>(base_x_col) + 1].as<float>();
+                        float base_y_m   = row[static_cast<size_t>(base_y_col) + 1].as<float>();
+                        float base_yaw   = row[static_cast<size_t>(base_yaw_col) + 1].as<float>();
+                        if (base_yaw_deg) {
+                            base_yaw *= 0.017453292519943295f;
+                        }
+                        keyframe.has_base_pose_2d = true;
+                        keyframe.base_x_m         = base_x_m;
+                        keyframe.base_y_m         = base_y_m;
+                        keyframe.base_yaw_rad     = base_yaw;
+                    }
+                } catch (const std::exception&) {
+                    continue;
+                }
+                loaded.push_back(std::move(keyframe));
+            }
+
+            std::sort(loaded.begin(), loaded.end(), [](const PoseKeyframe& a, const PoseKeyframe& b) { return a.t < b.t; });
+            *outKeyframes = std::move(loaded);
+            return !outKeyframes->empty();
         }
 
         bool ParseCompactSamplesNode(const YAML::Node& trajectoryNode, std::vector<PoseKeyframe>* outKeyframes, std::string* errorMessage) {
@@ -166,8 +480,150 @@ namespace kinematic_viewer {
                     }
                 }
             }
-            std::sort(names.begin(), names.end());
+
+            // Preferred order for readability in trajectory yaml/csv:
+            // leg -> head -> left_arm -> right_arm, with known robot-specific joint orders.
+            const std::array<std::string, 12> leg_priority = {
+                "left_hip_pitch_joint",  "left_hip_roll_joint",   "left_hip_yaw_joint",   "left_knee_joint",
+                "left_ankle_pitch_joint","left_ankle_roll_joint", "right_hip_pitch_joint", "right_hip_roll_joint",
+                "right_hip_yaw_joint",   "right_knee_joint",      "right_ankle_pitch_joint","right_ankle_roll_joint",
+            };
+            const std::array<std::string, 3> head_priority = {
+                "waist_yaw_joint", "waist_roll_joint", "waist_pitch_joint",
+            };
+            const std::array<std::string, 7> left_arm_priority = {
+                "left_shoulder_pitch_joint", "left_shoulder_roll_joint", "left_shoulder_yaw_joint", "left_elbow_joint",
+                "left_wrist_roll_joint", "left_wrist_pitch_joint", "left_wrist_yaw_joint",
+            };
+            const std::array<std::string, 7> right_arm_priority = {
+                "right_shoulder_pitch_joint", "right_shoulder_roll_joint", "right_shoulder_yaw_joint", "right_elbow_joint",
+                "right_wrist_roll_joint", "right_wrist_pitch_joint", "right_wrist_yaw_joint",
+            };
+
+            auto containsAny = [](const std::string& source, const std::initializer_list<const char*> tokens) {
+                for (const char* token : tokens) {
+                    if (source.find(token) != std::string::npos) {
+                        return true;
+                    }
+                }
+                return false;
+            };
+
+            auto groupRank = [&](const std::string& jointName) {
+                const std::string lower = LowerString(jointName);
+                if (containsAny(lower, {"leg_", "hip_", "knee_", "ankle_"})) {
+                    return 0;
+                }
+                if (containsAny(lower, {"head_", "waist_"})) {
+                    return 1;
+                }
+                if (containsAny(lower, {"left_arm_", "left_shoulder_", "left_elbow_", "left_wrist_"})) {
+                    return 2;
+                }
+                if (containsAny(lower, {"right_arm_", "right_shoulder_", "right_elbow_", "right_wrist_"})) {
+                    return 3;
+                }
+                return 4;
+            };
+
+            auto priorityIndex = [&](const std::string& jointName, const auto& arr) {
+                for (size_t i = 0; i < arr.size(); ++i) {
+                    if (arr[i] == jointName) {
+                        return static_cast<int>(i);
+                    }
+                }
+                return 1000000;
+            };
+
+            std::stable_sort(names.begin(), names.end(), [&](const std::string& a, const std::string& b) {
+                const int ga = groupRank(a);
+                const int gb = groupRank(b);
+                if (ga != gb) {
+                    return ga < gb;
+                }
+
+                if (ga == 0) {
+                    const int ia = priorityIndex(a, leg_priority);
+                    const int ib = priorityIndex(b, leg_priority);
+                    if (ia != ib) {
+                        return ia < ib;
+                    }
+                } else if (ga == 1) {
+                    const int ia = priorityIndex(a, head_priority);
+                    const int ib = priorityIndex(b, head_priority);
+                    if (ia != ib) {
+                        return ia < ib;
+                    }
+                } else if (ga == 2) {
+                    const int ia = priorityIndex(a, left_arm_priority);
+                    const int ib = priorityIndex(b, left_arm_priority);
+                    if (ia != ib) {
+                        return ia < ib;
+                    }
+                } else if (ga == 3) {
+                    const int ia = priorityIndex(a, right_arm_priority);
+                    const int ib = priorityIndex(b, right_arm_priority);
+                    if (ia != ib) {
+                        return ia < ib;
+                    }
+                }
+
+                return LowerString(a) < LowerString(b);
+            });
             return names;
+        }
+
+        bool EmitCsvLikeYaml(const DebugPlaybackState& playbackState, YAML::Emitter& emitter) {
+            const std::vector<std::string> jointNames = CollectJointNames(playbackState);
+            const bool hasAnyBase2d = std::any_of(playbackState.keyframes.begin(), playbackState.keyframes.end(),
+                                                  [](const PoseKeyframe& keyframe) { return keyframe.has_base_pose_2d; });
+
+            emitter << YAML::BeginMap;
+            emitter << YAML::Key << "joints" << YAML::Value << YAML::BeginSeq;
+            if (hasAnyBase2d) {
+                emitter << "chassis_x" << "chassis_y" << "chassis_yaw";
+            }
+            for (const auto& jointName : jointNames) {
+                emitter << jointName;
+            }
+            emitter << YAML::EndSeq;
+
+            emitter << YAML::Key << "values" << YAML::Value << YAML::BeginSeq;
+            std::unordered_map<std::string, float> lastValues;
+            bool lastBaseValid = false;
+            float lastBaseX      = 0.0f;
+            float lastBaseY      = 0.0f;
+            float lastBaseYaw    = 0.0f;
+            for (const auto& keyframe : playbackState.keyframes) {
+                emitter << YAML::BeginSeq;
+                emitter << keyframe.t;
+                if (hasAnyBase2d) {
+                    if (keyframe.has_base_pose_2d) {
+                        lastBaseValid = true;
+                        lastBaseX     = keyframe.base_x_m;
+                        lastBaseY     = keyframe.base_y_m;
+                        lastBaseYaw   = keyframe.base_yaw_rad;
+                    }
+                    emitter << (lastBaseValid ? lastBaseX : 0.0f) << (lastBaseValid ? lastBaseY : 0.0f)
+                            << (lastBaseValid ? lastBaseYaw : 0.0f);
+                }
+                for (const auto& jointName : jointNames) {
+                    auto it = keyframe.joints.find(jointName);
+                    if (it != keyframe.joints.end()) {
+                        lastValues[jointName] = it->second;
+                    }
+                    float value = 0.0f;
+                    auto last   = lastValues.find(jointName);
+                    if (last != lastValues.end()) {
+                        value = last->second;
+                    }
+                    emitter << value;
+                }
+                emitter << YAML::EndSeq;
+            }
+            emitter << YAML::EndSeq;
+            emitter << YAML::EndMap;
+            return true;
         }
 
         bool IsUniformTimeStep(const DebugPlaybackState& playbackState, double* outDt, double* outT0) {
@@ -240,6 +696,11 @@ namespace kinematic_viewer {
 
     void LinearTrajectoryInterpolator::SampleAndApply(const DebugPlaybackState& playbackState, float sampleTimeSec,
                                                       int* currentSegmentIndex, omnilink::teleop_viewer::RobotScene* scene) const {
+        auto lerpAngleRad = [](float a0, float a1, float alpha) {
+            const float delta = std::atan2(std::sin(a1 - a0), std::cos(a1 - a0));
+            return a0 + delta * alpha;
+        };
+
         if (scene == nullptr || playbackState.keyframes.empty()) {
             return;
         }
@@ -248,6 +709,9 @@ namespace kinematic_viewer {
             const auto& only = playbackState.keyframes.front();
             for (const auto& [jointName, value] : only.joints) {
                 scene->setJointPositionByName(jointName, value);
+            }
+            if (only.has_base_pose_2d) {
+                scene->setVirtualBasePose2D(only.base_x_m, only.base_y_m, only.base_yaw_rad);
             }
             if (currentSegmentIndex != nullptr) {
                 *currentSegmentIndex = 0;
@@ -277,6 +741,16 @@ namespace kinematic_viewer {
             float value = value0 * (1.0f - alpha) + it1->second * alpha;
             scene->setJointPositionByName(jointName, value);
         }
+        if (k0.has_base_pose_2d && k1.has_base_pose_2d) {
+            const float x_m   = k0.base_x_m * (1.0f - alpha) + k1.base_x_m * alpha;
+            const float y_m   = k0.base_y_m * (1.0f - alpha) + k1.base_y_m * alpha;
+            const float yaw   = lerpAngleRad(k0.base_yaw_rad, k1.base_yaw_rad, alpha);
+            scene->setVirtualBasePose2D(x_m, y_m, yaw);
+        } else if (k0.has_base_pose_2d) {
+            scene->setVirtualBasePose2D(k0.base_x_m, k0.base_y_m, k0.base_yaw_rad);
+        } else if (k1.has_base_pose_2d) {
+            scene->setVirtualBasePose2D(k1.base_x_m, k1.base_y_m, k1.base_yaw_rad);
+        }
 
         if (currentSegmentIndex != nullptr) {
             *currentSegmentIndex = static_cast<int>(lo);
@@ -292,7 +766,8 @@ namespace kinematic_viewer {
     }
 
     void TrajectoryPlayer::RecordKeyframe(DebugPlaybackState* playbackState,
-                                          const std::vector<omnilink::teleop_viewer::RobotScene::JointInfo>& joints) const {
+                                          const std::vector<omnilink::teleop_viewer::RobotScene::JointInfo>& joints,
+                                          const omnilink::teleop_viewer::RobotScene& scene) const {
         if (playbackState == nullptr) {
             return;
         }
@@ -306,6 +781,15 @@ namespace kinematic_viewer {
                 continue;
             }
             keyframe.joints[joint.name] = joint.position;
+        }
+        float base_x_m = 0.0f;
+        float base_y_m = 0.0f;
+        float base_yaw_rad = 0.0f;
+        if (scene.getVirtualBasePose2D(&base_x_m, &base_y_m, &base_yaw_rad)) {
+            keyframe.has_base_pose_2d = true;
+            keyframe.base_x_m         = base_x_m;
+            keyframe.base_y_m         = base_y_m;
+            keyframe.base_yaw_rad     = base_yaw_rad;
         }
         playbackState->keyframes.push_back(std::move(keyframe));
         playbackState->selected_keyframe_index = static_cast<int>(playbackState->keyframes.size()) - 1;
@@ -442,27 +926,60 @@ namespace kinematic_viewer {
             return false;
         }
 
-        const std::string timeKey = kinematic_playback_internal::LowerString(header[0]);
-        if (timeKey != "time" && timeKey != "t") {
+        int time_col = -1;
+        for (size_t i = 0; i < header.size(); ++i) {
+            if (header[i].empty()) {
+                continue;
+            }
+            const std::string key = kinematic_playback_internal::LowerString(header[i]);
+            if (key == "time" || key == "t" || key == "timestamp") {
+                time_col = static_cast<int>(i);
+                break;
+            }
+        }
+        if (time_col < 0) {
             if (errorMessage != nullptr) {
-                *errorMessage = "first csv column must be time/t";
+                *errorMessage = "csv missing time column (time/t/timestamp)";
             }
             return false;
         }
 
-        std::vector<std::string> jointNames;
-        jointNames.reserve(header.size() - 1);
-        for (size_t i = 1; i < header.size(); ++i) {
-            if (!header[i].empty()) {
-                jointNames.push_back(header[i]);
+        std::vector<std::pair<std::string, size_t>> jointColumns;
+        jointColumns.reserve(header.size() - 1);
+        int base_x_col   = -1;
+        int base_y_col   = -1;
+        int base_yaw_col = -1;
+        bool base_yaw_deg = false;
+        for (size_t i = 0; i < header.size(); ++i) {
+            if (static_cast<int>(i) == time_col || header[i].empty()) {
+                continue;
+            }
+            const std::string key = kinematic_playback_internal::LowerString(header[i]);
+            if (kinematic_playback_internal::IsSkippedCsvColumn(key)) {
+                continue;
+            }
+            if (key == "chassis_x" || key == "base_x" || key == "base_x_m" || key == "mobile_x") {
+                base_x_col = static_cast<int>(i);
+            } else if (key == "chassis_y" || key == "base_y" || key == "base_y_m" || key == "mobile_y") {
+                base_y_col = static_cast<int>(i);
+            } else if (key == "chassis_yaw_deg" || key == "base_yaw_deg") {
+                base_yaw_col = static_cast<int>(i);
+                base_yaw_deg = true;
+            } else if (key == "chassis_yaw" || key == "chassis_z" || key == "base_yaw" || key == "base_yaw_rad" ||
+                       key == "mobile_yaw") {
+                base_yaw_col = static_cast<int>(i);
+                base_yaw_deg = false;
+            } else {
+                jointColumns.push_back({kinematic_playback_internal::NormalizeTrajectoryJointName(header[i]), i});
             }
         }
-        if (jointNames.empty()) {
+        if (jointColumns.empty()) {
             if (errorMessage != nullptr) {
                 *errorMessage = "csv joints empty";
             }
             return false;
         }
+        const bool has_base_cols = (base_x_col >= 0 && base_y_col >= 0 && base_yaw_col >= 0);
 
         std::vector<PoseKeyframe> loaded;
         while (std::getline(file, line)) {
@@ -471,17 +988,44 @@ namespace kinematic_viewer {
                 continue;
             }
             std::vector<std::string> cells = kinematic_playback_internal::SplitCsvLine(stripped);
-            if (cells.size() < (jointNames.size() + 1)) {
-                continue;
-            }
             PoseKeyframe keyframe;
+            bool row_ok = true;
             try {
-                keyframe.t = std::stod(cells[0]);
-                for (size_t i = 0; i < jointNames.size(); ++i) {
-                    keyframe.joints[jointNames[i]] = static_cast<float>(std::stod(cells[i + 1]));
+                if (static_cast<size_t>(time_col) >= cells.size() || cells[time_col].empty()) {
+                    row_ok = false;
+                } else {
+                    keyframe.t = std::stod(cells[time_col]);
+                }
+                for (const auto& [joint_name, col_idx] : jointColumns) {
+                    if (col_idx >= cells.size() || cells[col_idx].empty()) {
+                        row_ok = false;
+                        break;
+                    }
+                    keyframe.joints[joint_name] = static_cast<float>(std::stod(cells[col_idx]));
                 }
             } catch (const std::exception&) {
+                row_ok = false;
+            }
+            if (!row_ok) {
                 continue;
+            }
+
+            if (has_base_cols && static_cast<size_t>(base_x_col) < cells.size() && static_cast<size_t>(base_y_col) < cells.size() &&
+                static_cast<size_t>(base_yaw_col) < cells.size() && !cells[base_x_col].empty() && !cells[base_y_col].empty() &&
+                !cells[base_yaw_col].empty()) {
+                try {
+                    float base_x_m   = static_cast<float>(std::stod(cells[base_x_col]));
+                    float base_y_m   = static_cast<float>(std::stod(cells[base_y_col]));
+                    float base_yaw   = static_cast<float>(std::stod(cells[base_yaw_col]));
+                    if (base_yaw_deg) {
+                        base_yaw *= 0.017453292519943295f;
+                    }
+                    keyframe.has_base_pose_2d = true;
+                    keyframe.base_x_m         = base_x_m;
+                    keyframe.base_y_m         = base_y_m;
+                    keyframe.base_yaw_rad     = base_yaw;
+                } catch (const std::exception&) {
+                }
             }
             loaded.push_back(std::move(keyframe));
         }
@@ -516,17 +1060,27 @@ namespace kinematic_viewer {
 
             std::vector<PoseKeyframe> loaded;
             bool parsed = false;
-            if (kinematic_playback_internal::ParseLegacyKeyframesNode(keyframesNode, &loaded)) {
+            bool parsed_compact = false;
+            if (kinematic_playback_internal::ParseCsvLikeYamlNode(root, &loaded, errorMessage)) {
+                parsed = true;
+            } else if (trajectory && kinematic_playback_internal::ParseCsvLikeYamlNode(trajectory, &loaded, errorMessage)) {
+                parsed = true;
+            } else if (kinematic_playback_internal::ParseLegacyKeyframesNode(keyframesNode, &loaded)) {
                 parsed = true;
             } else if (kinematic_playback_internal::ParseCompactDtValuesNode(trajectory, &loaded, errorMessage)) {
-                parsed = true;
+                parsed        = true;
+                parsed_compact = true;
             } else if (kinematic_playback_internal::ParseCompactSamplesNode(trajectory, &loaded, errorMessage)) {
-                parsed = true;
+                parsed        = true;
+                parsed_compact = true;
             }
             if (!parsed) {
                 if (errorMessage != nullptr && errorMessage->empty()) {
                     *errorMessage = "unsupported trajectory format";
                 }
+                return false;
+            }
+            if (parsed_compact && !kinematic_playback_internal::MergeCompactBase2DTrack(trajectory, &loaded, errorMessage)) {
                 return false;
             }
 
@@ -567,6 +1121,8 @@ namespace kinematic_viewer {
         if (ext == ".csv") {
             try {
                 const std::vector<std::string> jointNames = kinematic_playback_internal::CollectJointNames(playbackState);
+                const bool hasAnyBase2d = std::any_of(playbackState.keyframes.begin(), playbackState.keyframes.end(),
+                                                      [](const PoseKeyframe& keyframe) { return keyframe.has_base_pose_2d; });
                 std::ofstream file(path);
                 if (!file.good()) {
                     if (errorMessage != nullptr) {
@@ -579,9 +1135,16 @@ namespace kinematic_viewer {
                 for (const auto& jointName : jointNames) {
                     file << "," << jointName;
                 }
+                if (hasAnyBase2d) {
+                    file << ",chassis_x,chassis_y,chassis_yaw";
+                }
                 file << "\n";
 
                 std::unordered_map<std::string, float> lastValues;
+                bool lastBaseValid = false;
+                float lastBaseX = 0.0f;
+                float lastBaseY = 0.0f;
+                float lastBaseYaw = 0.0f;
                 for (const auto& keyframe : playbackState.keyframes) {
                     file << keyframe.t;
                     for (const auto& jointName : jointNames) {
@@ -595,6 +1158,19 @@ namespace kinematic_viewer {
                             value = last->second;
                         }
                         file << "," << value;
+                    }
+                    if (hasAnyBase2d) {
+                        if (keyframe.has_base_pose_2d) {
+                            lastBaseValid = true;
+                            lastBaseX     = keyframe.base_x_m;
+                            lastBaseY     = keyframe.base_y_m;
+                            lastBaseYaw   = keyframe.base_yaw_rad;
+                        }
+                        if (lastBaseValid) {
+                            file << "," << lastBaseX << "," << lastBaseY << "," << lastBaseYaw;
+                        } else {
+                            file << ",0,0,0";
+                        }
                     }
                     file << "\n";
                 }
@@ -617,67 +1193,8 @@ namespace kinematic_viewer {
             return false;
         }
         try {
-            const std::vector<std::string> jointNames = kinematic_playback_internal::CollectJointNames(playbackState);
             YAML::Emitter out;
-            out << YAML::BeginMap;
-            out << YAML::Key << "trajectory" << YAML::Value << YAML::BeginMap;
-            out << YAML::Key << "version" << YAML::Value << 2;
-            out << YAML::Key << "format" << YAML::Value << "compact";
-            out << YAML::Key << "joints" << YAML::Value << YAML::BeginSeq;
-            for (const auto& jointName : jointNames) {
-                out << jointName;
-            }
-            out << YAML::EndSeq;
-
-            double dt              = 0.0;
-            double t0              = 0.0;
-            const bool uniformStep = kinematic_playback_internal::IsUniformTimeStep(playbackState, &dt, &t0);
-            if (uniformStep) {
-                out << YAML::Key << "t0" << YAML::Value << t0;
-                out << YAML::Key << "dt" << YAML::Value << dt;
-                out << YAML::Key << "values" << YAML::Value << YAML::BeginSeq;
-                std::unordered_map<std::string, float> lastValues;
-                for (const auto& keyframe : playbackState.keyframes) {
-                    out << YAML::BeginSeq;
-                    for (const auto& jointName : jointNames) {
-                        auto it = keyframe.joints.find(jointName);
-                        if (it != keyframe.joints.end()) {
-                            lastValues[jointName] = it->second;
-                        }
-                        float v   = 0.0f;
-                        auto last = lastValues.find(jointName);
-                        if (last != lastValues.end()) {
-                            v = last->second;
-                        }
-                        out << v;
-                    }
-                    out << YAML::EndSeq;
-                }
-                out << YAML::EndSeq;
-            } else {
-                out << YAML::Key << "samples" << YAML::Value << YAML::BeginSeq;
-                std::unordered_map<std::string, float> lastValues;
-                for (const auto& keyframe : playbackState.keyframes) {
-                    out << YAML::BeginSeq;
-                    out << keyframe.t;
-                    for (const auto& jointName : jointNames) {
-                        auto it = keyframe.joints.find(jointName);
-                        if (it != keyframe.joints.end()) {
-                            lastValues[jointName] = it->second;
-                        }
-                        float v   = 0.0f;
-                        auto last = lastValues.find(jointName);
-                        if (last != lastValues.end()) {
-                            v = last->second;
-                        }
-                        out << v;
-                    }
-                    out << YAML::EndSeq;
-                }
-                out << YAML::EndSeq;
-            }
-            out << YAML::EndMap;
-            out << YAML::EndMap;
+            kinematic_playback_internal::EmitCsvLikeYaml(playbackState, out);
 
             std::ofstream file(path);
             if (!file.good()) {
@@ -709,7 +1226,8 @@ namespace kinematic_viewer {
     }
 
     void BuildDemoTrajectoryFromCurrentPose(DebugPlaybackState* playbackState,
-                                            const std::vector<omnilink::teleop_viewer::RobotScene::JointInfo>& joints) {
+                                            const std::vector<omnilink::teleop_viewer::RobotScene::JointInfo>& joints,
+                                            const omnilink::teleop_viewer::RobotScene& scene) {
         if (playbackState == nullptr) {
             return;
         }
@@ -733,6 +1251,10 @@ namespace kinematic_viewer {
         const int frameCount = 16;
         const float dt       = std::max(0.1f, playbackState->keyframe_interval_sec);
         const float twoPi    = 6.283185307f;
+        float start_base_x_m = 0.0f;
+        float start_base_y_m = 0.0f;
+        float start_base_yaw = 0.0f;
+        const bool has_base_pose = scene.getVirtualBasePose2D(&start_base_x_m, &start_base_y_m, &start_base_yaw);
         for (int frame = 0; frame < frameCount; ++frame) {
             PoseKeyframe keyframe;
             keyframe.t = static_cast<double>(frame) * static_cast<double>(dt);
@@ -747,6 +1269,15 @@ namespace kinematic_viewer {
                 float value                  = joint.position + amplitude * std::sin(offsetPhase);
                 value                        = std::clamp(value, joint.min_angle, joint.max_angle);
                 keyframe.joints[joint.name]  = value;
+            }
+            if (has_base_pose) {
+                const float x_wave = 0.06f * std::sin(phase);
+                const float y_wave = 0.04f * std::cos(phase);
+                const float yaw_wave = 0.20f * std::sin(phase);
+                keyframe.has_base_pose_2d = true;
+                keyframe.base_x_m         = start_base_x_m + x_wave;
+                keyframe.base_y_m         = start_base_y_m + y_wave;
+                keyframe.base_yaw_rad     = start_base_yaw + yaw_wave;
             }
             playbackState->keyframes.push_back(std::move(keyframe));
         }

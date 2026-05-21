@@ -28,7 +28,8 @@ namespace kinematic_viewer {
         void SetInterpolator(std::unique_ptr<TrajectoryInterpolator> interpolator);
 
         void RecordKeyframe(DebugPlaybackState* playbackState,
-                            const std::vector<omnilink::teleop_viewer::RobotScene::JointInfo>& joints) const;
+                            const std::vector<omnilink::teleop_viewer::RobotScene::JointInfo>& joints,
+                            const omnilink::teleop_viewer::RobotScene& scene) const;
         void RemoveSelectedKeyframe(DebugPlaybackState* playbackState) const;
         void Clear(DebugPlaybackState* playbackState) const;
         void TogglePlayPause(DebugPlaybackState* playbackState) const;
@@ -48,6 +49,7 @@ namespace kinematic_viewer {
     bool LoadTrajectoryFromFile(const std::string& path, DebugPlaybackState* playbackState, std::string* errorMessage);
     bool SaveTrajectoryToFile(const std::string& path, const DebugPlaybackState& playbackState, std::string* errorMessage);
     void BuildDemoTrajectoryFromCurrentPose(DebugPlaybackState* playbackState,
-                                            const std::vector<omnilink::teleop_viewer::RobotScene::JointInfo>& joints);
+                                            const std::vector<omnilink::teleop_viewer::RobotScene::JointInfo>& joints,
+                                            const omnilink::teleop_viewer::RobotScene& scene);
 
 }  // namespace kinematic_viewer

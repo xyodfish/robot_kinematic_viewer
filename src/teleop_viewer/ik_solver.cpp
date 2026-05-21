@@ -807,7 +807,7 @@ namespace omnilink::teleop_viewer {
                 }
                 return false;
             }
-            const flex_ik::Vector qCurrent = buildWbcFullBodyQFromScene(*scene);
+            const flex_ik::Vector qCurrent = buildWbcFullBodyQFromScene(*scene);  // get full body q from q
             auto applyCandidate            = [&](const flex_ik::Vector& solution, bool solverSuccess, const std::string& solverName) {
                 applyWbcFullBodyQToScene(scene, limitWbcFullBodyStep(qCurrent, solution, fastMode, positionOnlyMode));
                 if (!solverSuccess && !fastMode && !positionOnlyMode && activeChainIndex >= 0 && activeChainIndex < chainCount()) {

@@ -134,6 +134,10 @@ namespace kinematic_viewer {
     struct PoseKeyframe {
         double t = 0.0;
         std::unordered_map<std::string, float> joints;
+        bool has_base_pose_2d = false;
+        float base_x_m        = 0.0f;
+        float base_y_m        = 0.0f;
+        float base_yaw_rad    = 0.0f;
     };
 
     struct DebugPlaybackState {
@@ -152,7 +156,7 @@ namespace kinematic_viewer {
         int selected_keyframe_index      = -1;
         int current_segment_index        = -1;
         bool timeline_edited_this_ui     = false;
-        char trajectory_file_path[512]   = "config/trajectory_playback_demo.yaml";
+        char trajectory_file_path[512]   = "config/trajectories/galbot_g1_dance_slide_in.csv";
         char trajectory_browser_dir[512] = "";
         std::string trajectory_io_status;
         bool trajectory_alert_popup_pending = false;
