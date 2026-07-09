@@ -1,4 +1,5 @@
 build/
+build-local/
 bin/
 lib/
 build_cmake_test/

@@ -4,7 +4,7 @@ window:
   title: "机器人运动学调试界面"
 
 robot:
-  urdf_path: "/home/yuxia/Workspace/SingoriX/OmniLink/singorix_omnilink/config/galbot_description/galbot_one_golf_description/galbot_one_golf.urdf"
+  urdf_path: "/home/xiayu/Workspace/gone/singorix_omnilink/config/galbot_description/galbot_one_golf_description/galbot_one_golf.urdf"
 
 camera:
   distance: 3.0

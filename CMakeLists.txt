@@ -18,20 +18,67 @@ if(NOT ARCH_PREFIX)
     set(ARCH_PREFIX ${ARCH_FREFIX})
 endif()
 
+set(ROBOT_DEVEL_PATH "/opt/robot/devel" CACHE PATH "Local non-Conan dependency prefix.")
+
 if(NOT ROOT_DEVEL_ARCH_PATH)
-    set(ROOT_DEVEL_ARCH_PATH /opt/galbot/devel/${ARCH_FREFIX})
+    set(ROOT_DEVEL_ARCH_PATH ${ROBOT_DEVEL_PATH})
 endif()
 if(NOT CONTROL_DEVEL_ARCH_PATH)
-    set(CONTROL_DEVEL_ARCH_PATH /opt/galbot/devel_control/${ARCH_FREFIX})
+    set(CONTROL_DEVEL_ARCH_PATH ${ROBOT_DEVEL_PATH})
 endif()
 
-list(APPEND CMAKE_PREFIX_PATH ${ROOT_DEVEL_ARCH_PATH} ${CONTROL_DEVEL_ARCH_PATH})
+list(PREPEND CMAKE_PREFIX_PATH
+    ${ROBOT_DEVEL_PATH}
+    ${ROOT_DEVEL_ARCH_PATH}
+    ${CONTROL_DEVEL_ARCH_PATH})
+list(PREPEND CMAKE_LIBRARY_PATH
+    ${ROBOT_DEVEL_PATH}/lib
+    ${ROBOT_DEVEL_PATH}/lib64
+    ${ROBOT_DEVEL_PATH}/lib/${CMAKE_LIBRARY_ARCHITECTURE}
+    ${ROOT_DEVEL_ARCH_PATH}/lib
+    ${CONTROL_DEVEL_ARCH_PATH}/lib)
+list(PREPEND CMAKE_INCLUDE_PATH
+    ${ROBOT_DEVEL_PATH}/include
+    ${ROOT_DEVEL_ARCH_PATH}/include
+    ${CONTROL_DEVEL_ARCH_PATH}/include)
+list(PREPEND CMAKE_PROGRAM_PATH ${ROBOT_DEVEL_PATH}/bin)
+
+list(PREPEND CMAKE_INSTALL_RPATH
+    "${ROBOT_DEVEL_PATH}/lib"
+    "${ROBOT_DEVEL_PATH}/lib64"
+    "${ROBOT_DEVEL_PATH}/lib/${CMAKE_LIBRARY_ARCHITECTURE}")
+list(PREPEND CMAKE_BUILD_RPATH
+    "${ROBOT_DEVEL_PATH}/lib"
+    "${ROBOT_DEVEL_PATH}/lib64"
+    "${ROBOT_DEVEL_PATH}/lib/${CMAKE_LIBRARY_ARCHITECTURE}")
+add_link_options(LINKER:--disable-new-dtags)
+
+set(_rkv_pkg_config_paths
+    "${ROBOT_DEVEL_PATH}/lib/pkgconfig"
+    "${ROBOT_DEVEL_PATH}/lib64/pkgconfig"
+    "${ROBOT_DEVEL_PATH}/lib/${CMAKE_LIBRARY_ARCHITECTURE}/pkgconfig"
+    "${ROBOT_DEVEL_PATH}/share/pkgconfig")
+foreach(_rkv_pkg_path IN LISTS _rkv_pkg_config_paths)
+    if(DEFINED ENV{PKG_CONFIG_PATH} AND NOT "$ENV{PKG_CONFIG_PATH}" STREQUAL "")
+        set(ENV{PKG_CONFIG_PATH} "${_rkv_pkg_path}:$ENV{PKG_CONFIG_PATH}")
+    else()
+        set(ENV{PKG_CONFIG_PATH} "${_rkv_pkg_path}")
+    endif()
+endforeach()
+message(STATUS "PIVOT local dependency prefix: ${ROBOT_DEVEL_PATH}")
 
 find_package(trac_ik REQUIRED)
 find_package(OpenGL REQUIRED)
-find_package(ASSIMP REQUIRED)
-find_package(GLEW REQUIRED)
-find_package(glog REQUIRED) 
+find_package(X11 REQUIRED)
+find_package(glfw3 REQUIRED)
+find_package(assimp QUIET)
+if(NOT TARGET assimp::assimp AND NOT TARGET assimp)
+    find_package(ASSIMP REQUIRED)
+endif()
+find_package(GLEW REQUIRED) 
+find_package(glog REQUIRED)
+find_package(glm REQUIRED)
+find_package(Eigen3 REQUIRED)
 find_package(pinocchio REQUIRED)
 find_package(tinyxml2 QUIET)
 find_package(qpOASES QUIET)
@@ -56,14 +103,14 @@ if(NOT GIF_LIBRARY OR NOT GIF_INCLUDE_DIR)
 endif()
 if(NOT TARGET yaml-cpp)
     find_library(YAMLCPP_LIBRARY NAMES yaml-cpp yaml-cpp.so.0.7
-                 PATHS ${ROOT_DEVEL_ARCH_PATH}/lib NO_DEFAULT_PATH)
+                 PATHS ${ROBOT_DEVEL_PATH}/lib ${ROBOT_DEVEL_PATH}/lib64 ${ROOT_DEVEL_ARCH_PATH}/lib NO_DEFAULT_PATH)
     if(NOT YAMLCPP_LIBRARY)
-        message(FATAL_ERROR "libyaml-cpp not found under ${ROOT_DEVEL_ARCH_PATH}/lib")
+        message(FATAL_ERROR "libyaml-cpp not found under ${ROBOT_DEVEL_PATH}/lib, ${ROBOT_DEVEL_PATH}/lib64 or ${ROOT_DEVEL_ARCH_PATH}/lib")
     endif()
     add_library(yaml-cpp UNKNOWN IMPORTED)
     set_target_properties(yaml-cpp PROPERTIES IMPORTED_LOCATION "${YAMLCPP_LIBRARY}")
     set_target_properties(yaml-cpp PROPERTIES
-        INTERFACE_INCLUDE_DIRECTORIES "${ROOT_DEVEL_ARCH_PATH}/include")
+        INTERFACE_INCLUDE_DIRECTORIES "${ROBOT_DEVEL_PATH}/include")
 endif()
 
 if(TARGET TinyXML2::TinyXML2 AND NOT TARGET tinyxml2::tinyxml2)
@@ -79,24 +126,38 @@ endif()
 
 if(NOT qpOASES_FOUND)
     find_library(QPOASES_LIBRARY NAMES qpOASES
-                 PATHS /opt/galbot/devel/${ARCH_FREFIX}/lib
+                 PATHS ${ROBOT_DEVEL_PATH}/lib
+                       ${ROBOT_DEVEL_PATH}/lib64
+                       ${ROBOT_DEVEL_PATH}/lib/${CMAKE_LIBRARY_ARCHITECTURE}
+                       /opt/galbot/devel/${ARCH_FREFIX}/lib
                        /opt/galbot/devel/${ARCH_PREFIX}/lib
                        /opt/galbot/devel/x86_64-Linux-GNU-9.4.0/lib)
 endif()
+if(NOT QPOASES_LIBRARY AND qpOASES_LIBRARY)
+    set(QPOASES_LIBRARY "${qpOASES_LIBRARY}")
+endif()
+
+foreach(_rkv_runtime_lib IN ITEMS CONSOLE_BRIDGE TINYXML TINYXML2 NLOPT)
+    string(TOLOWER "${_rkv_runtime_lib}" _rkv_runtime_lib_name)
+    find_library(${_rkv_runtime_lib}_LIBRARY NAMES ${_rkv_runtime_lib_name}
+        PATHS "${ROBOT_DEVEL_PATH}/lib" "${ROBOT_DEVEL_PATH}/lib64" "${ROBOT_DEVEL_PATH}/lib/${CMAKE_LIBRARY_ARCHITECTURE}"
+        NO_DEFAULT_PATH)
+endforeach()
 
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${PROJECT_SOURCE_DIR}/bin)
 set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${PROJECT_SOURCE_DIR}/lib)
 set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
-set(CMAKE_BUILD_RPATH "${CMAKE_BINARY_DIR}/lib;${ROOT_DEVEL_ARCH_PATH}/lib")
-set(CMAKE_INSTALL_RPATH "\$ORIGIN/../lib")
+list(APPEND CMAKE_BUILD_RPATH "${CMAKE_BINARY_DIR}/lib" "${ROOT_DEVEL_ARCH_PATH}/lib")
+list(APPEND CMAKE_INSTALL_RPATH "\$ORIGIN/../lib")
 
 add_subdirectory(deps/imgui)
+target_link_libraries(imgui PUBLIC X11::X11)
 
 add_library(imgui_glfw_support SHARED
     deps/imgui/imgui_impl_glfw.cpp
     deps/imgui/imgui_impl_opengl3.cpp
 )
-target_link_libraries(imgui_glfw_support PUBLIC imgui glfw OpenGL::GL ${CMAKE_DL_LIBS})
+target_link_libraries(imgui_glfw_support PUBLIC imgui glfw OpenGL::GL X11::X11 ${CMAKE_DL_LIBS})
 target_include_directories(imgui_glfw_support PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/deps/imgui")
 
 add_library(imguizmo SHARED deps/imguizmo/ImGuizmo.cpp)
@@ -106,6 +167,11 @@ target_include_directories(imguizmo PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/deps/img
 add_library(flex_ik_core SHARED src/ik_backends/flex_ik/flex_ik.cc)
 target_include_directories(flex_ik_core PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/include/ik_backends/flex_ik")
 target_link_libraries(flex_ik_core PUBLIC Eigen3::Eigen pinocchio::pinocchio)
+if(QPOASES_LIBRARY)
+    target_link_libraries(flex_ik_core PUBLIC ${QPOASES_LIBRARY})
+elseif(qpOASES_LIBRARIES)
+    target_link_libraries(flex_ik_core PUBLIC ${qpOASES_LIBRARIES})
+endif()
 set_target_properties(flex_ik_core PROPERTIES POSITION_INDEPENDENT_CODE ON)
 
 add_library(wbc_chain_ik_core SHARED
@@ -116,6 +182,11 @@ add_library(wbc_chain_ik_core SHARED
 )
 target_include_directories(wbc_chain_ik_core PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/include/ik_backends/wbc_chain_ik")
 target_link_libraries(wbc_chain_ik_core PUBLIC Eigen3::Eigen pinocchio::pinocchio)
+if(QPOASES_LIBRARY)
+    target_link_libraries(wbc_chain_ik_core PUBLIC ${QPOASES_LIBRARY})
+elseif(qpOASES_LIBRARIES)
+    target_link_libraries(wbc_chain_ik_core PUBLIC ${qpOASES_LIBRARIES})
+endif()
 set_target_properties(wbc_chain_ik_core PROPERTIES POSITION_INDEPENDENT_CODE ON)
 
 # Velocity Planning Library (from trajectory_planner_utils)
@@ -144,9 +215,17 @@ set(RKV_PCL_LIB_NAMES
     pcl_filters pcl_io pcl_io_ply lz4 flann_cpp boost_filesystem)
 set(RKV_PCL_LIBS "")
 set(RKV_PCL_FOUND TRUE)
+find_path(RKV_PCL_INCLUDE_DIR NAMES pcl/common/io.h
+    PATHS "${ROBOT_DEVEL_PATH}/include" "${ROOT_DEVEL_ARCH_PATH}/include" "${CONTROL_DEVEL_ARCH_PATH}/include"
+    PATH_SUFFIXES pcl-1.13 pcl-1.14 pcl-1.12
+    NO_DEFAULT_PATH)
+if(NOT RKV_PCL_INCLUDE_DIR)
+    set(RKV_PCL_FOUND FALSE)
+    message(STATUS "PCL: missing include path")
+endif()
 foreach(_rkv_pcl_lib IN LISTS RKV_PCL_LIB_NAMES)
     find_library(RKV_PCL_LIB_${_rkv_pcl_lib} NAMES ${_rkv_pcl_lib}
-        PATHS "${ROOT_DEVEL_ARCH_PATH}/lib" "${CONTROL_DEVEL_ARCH_PATH}/lib"
+        PATHS "${ROBOT_DEVEL_PATH}/lib" "${ROBOT_DEVEL_PATH}/lib64" "${ROBOT_DEVEL_PATH}/lib/${CMAKE_LIBRARY_ARCHITECTURE}" "${ROOT_DEVEL_ARCH_PATH}/lib" "${CONTROL_DEVEL_ARCH_PATH}/lib"
         NO_DEFAULT_PATH)
     if(NOT RKV_PCL_LIB_${_rkv_pcl_lib})
         set(RKV_PCL_FOUND FALSE)
@@ -167,6 +246,7 @@ add_library(rkv_viewer_core SHARED
     src/kinematic_viewer/kinematic_render_loop.cpp
     src/kinematic_viewer/kinematic_input_handler.cpp
     src/kinematic_viewer/kinematic_config_watcher.cpp
+    src/kinematic_viewer/kinematic_app.cpp
     src/kinematic_viewer/kinematic_playback_state_machine.cpp
     src/kinematic_viewer/kinematic_playback.cpp
     src/kinematic_viewer/kinematic_playback_bundle.cpp
@@ -197,6 +277,13 @@ add_library(rkv_viewer_core SHARED
     src/rkv/ik_solver.cpp
     src/rkv/scene.cpp
 )
+target_compile_definitions(rkv_viewer_core PUBLIC GLM_ENABLE_EXPERIMENTAL)
+target_link_directories(rkv_viewer_core PUBLIC
+    "${ROBOT_DEVEL_PATH}/lib"
+    "${ROBOT_DEVEL_PATH}/lib64"
+    "${ROBOT_DEVEL_PATH}/lib/${CMAKE_LIBRARY_ARCHITECTURE}"
+    "${ROOT_DEVEL_ARCH_PATH}/lib"
+    "${CONTROL_DEVEL_ARCH_PATH}/lib")
 target_include_directories(rkv_viewer_core PUBLIC
     "${CMAKE_CURRENT_SOURCE_DIR}/include"
     "${CMAKE_CURRENT_SOURCE_DIR}/deps/imgui"
@@ -221,9 +308,14 @@ target_link_libraries(rkv_viewer_core PUBLIC
     OpenGL::GL
     glfw
     GLEW::GLEW
+    glm::glm-header-only
     yaml-cpp
     PkgConfig::LIBAV
     ${GIF_LIBRARY}
+    ${CONSOLE_BRIDGE_LIBRARY}
+    ${TINYXML_LIBRARY}
+    ${TINYXML2_LIBRARY}
+    ${NLOPT_LIBRARY}
     pthread
     dl
     glog::glog
@@ -231,13 +323,13 @@ target_link_libraries(rkv_viewer_core PUBLIC
 )
 set_target_properties(rkv_viewer_core PROPERTIES
     LIBRARY_OUTPUT_DIRECTORY "${PROJECT_SOURCE_DIR}/lib"
-    BUILD_RPATH "${ROOT_DEVEL_ARCH_PATH}/lib"
+    BUILD_RPATH "${ROBOT_DEVEL_PATH}/lib;${ROBOT_DEVEL_PATH}/lib64;${ROBOT_DEVEL_PATH}/lib/${CMAKE_LIBRARY_ARCHITECTURE};${ROOT_DEVEL_ARCH_PATH}/lib"
     INSTALL_RPATH "$ORIGIN")
 
-if(qpOASES_FOUND)
-    target_link_libraries(rkv_viewer_core PUBLIC ${qpOASES_LIBRARIES})
-elseif(QPOASES_LIBRARY)
+if(QPOASES_LIBRARY)
     target_link_libraries(rkv_viewer_core PUBLIC ${QPOASES_LIBRARY})
+elseif(qpOASES_LIBRARIES)
+    target_link_libraries(rkv_viewer_core PUBLIC ${qpOASES_LIBRARIES})
 endif()
 
 # ---------------------------------------------------------------------------
@@ -248,7 +340,7 @@ macro(rkv_add_panel id src)
     target_link_libraries(rkv_panel_${id} PRIVATE rkv_viewer_core)
     set_target_properties(rkv_panel_${id} PROPERTIES
         LIBRARY_OUTPUT_DIRECTORY "${PROJECT_SOURCE_DIR}/lib"
-        BUILD_RPATH "${ROOT_DEVEL_ARCH_PATH}/lib"
+        BUILD_RPATH "${ROBOT_DEVEL_PATH}/lib;${ROBOT_DEVEL_PATH}/lib64;${ROBOT_DEVEL_PATH}/lib/${CMAKE_LIBRARY_ARCHITECTURE};${ROOT_DEVEL_ARCH_PATH}/lib"
         INSTALL_RPATH "$ORIGIN")
 endmacro()
 
@@ -279,7 +371,6 @@ list(APPEND RKV_PANEL_TARGETS rkv_panel_point_cloud)
 # ---------------------------------------------------------------------------
 add_executable(PIVOT_VIEWER
     src/robot_kinematic_viewer.cpp
-    src/kinematic_viewer/kinematic_app.cpp
     src/kinematic_viewer/kinematic_bootstrap.cpp
     deps/glad/glad.c
 )
@@ -287,17 +378,17 @@ add_executable(PIVOT_VIEWER
 target_link_libraries(PIVOT_VIEWER PRIVATE rkv_viewer_core)
 add_dependencies(PIVOT_VIEWER ${RKV_PANEL_TARGETS})
 set_target_properties(PIVOT_VIEWER PROPERTIES
-    BUILD_RPATH "${PROJECT_SOURCE_DIR}/lib;${ROOT_DEVEL_ARCH_PATH}/lib"
+    BUILD_RPATH "${PROJECT_SOURCE_DIR}/lib;${ROBOT_DEVEL_PATH}/lib;${ROBOT_DEVEL_PATH}/lib64;${ROBOT_DEVEL_PATH}/lib/${CMAKE_LIBRARY_ARCHITECTURE};${ROOT_DEVEL_ARCH_PATH}/lib"
     INSTALL_RPATH "$ORIGIN/../lib")
 
 add_executable(collision_distance_test tests/collision_distance_test.cpp deps/glad/glad.c)
 target_link_libraries(collision_distance_test PRIVATE rkv_viewer_core glfw)
 set_target_properties(collision_distance_test PROPERTIES
-    BUILD_RPATH "${PROJECT_SOURCE_DIR}/lib;${ROOT_DEVEL_ARCH_PATH}/lib"
+    BUILD_RPATH "${PROJECT_SOURCE_DIR}/lib;${ROBOT_DEVEL_PATH}/lib;${ROBOT_DEVEL_PATH}/lib64;${ROBOT_DEVEL_PATH}/lib/${CMAKE_LIBRARY_ARCHITECTURE};${ROOT_DEVEL_ARCH_PATH}/lib"
     RUNTIME_OUTPUT_DIRECTORY "${PROJECT_SOURCE_DIR}/bin")
 
 if(RKV_PCL_FOUND)
-    find_library(RKV_LIB_GOMP NAMES gomp libgomp PATHS "${ROOT_DEVEL_ARCH_PATH}/lib" NO_DEFAULT_PATH)
+    find_library(RKV_LIB_GOMP NAMES gomp libgomp PATHS "${ROBOT_DEVEL_PATH}/lib" "${ROBOT_DEVEL_PATH}/lib64" "${ROOT_DEVEL_ARCH_PATH}/lib" NO_DEFAULT_PATH)
     if(RKV_LIB_GOMP)
         list(APPEND RKV_PCL_LIBS ${RKV_LIB_GOMP})
     endif()
@@ -311,12 +402,15 @@ if(RKV_PCL_FOUND)
     target_compile_definitions(rkv_point_cloud_pcl PRIVATE RKV_PCL_LOADER_EXPORTS=1)
     target_include_directories(rkv_point_cloud_pcl PRIVATE
         "${CMAKE_CURRENT_SOURCE_DIR}/include"
+        "${RKV_PCL_INCLUDE_DIR}"
+        "${ROBOT_DEVEL_PATH}/include"
+        "${ROBOT_DEVEL_PATH}/include/eigen3"
         "${ROOT_DEVEL_ARCH_PATH}/include"
         "${ROOT_DEVEL_ARCH_PATH}/include/eigen3")
     target_link_libraries(rkv_point_cloud_pcl PRIVATE ${RKV_PCL_LIBS})
     set_target_properties(rkv_point_cloud_pcl PROPERTIES
         LIBRARY_OUTPUT_DIRECTORY "${PROJECT_SOURCE_DIR}/lib"
-        BUILD_RPATH "${ROOT_DEVEL_ARCH_PATH}/lib"
+        BUILD_RPATH "${ROBOT_DEVEL_PATH}/lib;${ROBOT_DEVEL_PATH}/lib64;${ROBOT_DEVEL_PATH}/lib/${CMAKE_LIBRARY_ARCHITECTURE};${ROOT_DEVEL_ARCH_PATH}/lib"
         INSTALL_RPATH "$ORIGIN/../lib")
 
     target_compile_definitions(rkv_viewer_core PUBLIC RKV_HAS_PCL=1)
